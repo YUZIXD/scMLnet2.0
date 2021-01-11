@@ -1,0 +1,114 @@
+---
+title: "Tutorial of scMLnet_0.2.0"
+date: "Compiled: January 11, 2021"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Tutorial of scMLnet}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Required packages
+
+```{r eval=FALSE}
+library(Seurat)
+library(Matrix)
+library(dplyr)
+library(scMLnet)
+```
+
+## Input data
+
+```{r eval=FALSE}
+# import sample data
+data <- readRDS("./example/data.rds")
+#data <- data[,sample(1:ncol(data),5000,replace = F)]
+
+# import sample annotation
+BarCluTable <- read.table("./example/barcodetype.txt", header = T, sep = "\t", stringsAsFactors = F)
+#BarCluTable <- BarCluTable[match(colnames(data),BarCluTable$Barcode),]
+```
+
+## Define the receiver cell and sender cell
+
+```{r eval=FALSE}
+types <- unique(BarCluTable$Cluster)
+LigClu <- "B cells"      
+RecClu <- "Secretory"    
+```
+
+## Set parameters
+
+```{r eval=FALSE}
+# The parameters for Filter and Normalization
+Raw.data = TRUE
+min.cells = 3
+min.features = 200
+
+# The parameters for FindMarkers of Seurat
+min_pct = 0.05
+logfc = 0.15
+pval = 0.05
+
+# The parameters for Differential expression analysis
+abundant.cutoff = 0.01
+all_mean <- rowMeans(data)
+hist(log10(all_mean), breaks=100, main="", col="grey80",
+     xlab=expression(Log[10]~"average count"))
+abline(v=log10(abundant.cutoff), col="red", lwd=2, lty=2)
+abs_logFC = 1
+
+# output folder
+workdir <- "./output"
+```
+
+## Load the prior databases
+
+```{r eval=FALSE}
+# user can input their own interaction DB which required two column: source and target
+Databases <- readRDS("./prior_knowledge/hm_potential_matrix_RWR.rds")
+
+LigRec.DB <- Databases$LigRec_matrix %>% as.matrix() %>% reshape2::melt() %>%
+  .[.$value > 0,] %>%
+  select(source=Var1, target=Var2, score=value) %>%
+  mutate(source=as.vector(source), target=as.vector(target)) %>% as_tibble()
+
+RecTF.DB <- Databases$RecTF_matrix %>% as.matrix() %>% reshape2::melt() %>%
+  .[.$value > quantile(.$value,0.9),] %>%
+  select(source=Var1, target=Var2, score=value) %>%
+  mutate(source=as.vector(source), target=as.vector(target)) %>% as_tibble()
+
+TFTG.DB <- Databases$TFTG_matrix %>% as.matrix() %>% reshape2::melt() %>%
+  .[.$value > 0,] %>%
+  select(source=Var1, target=Var2, score=value) %>%
+  mutate(source=as.vector(source), target=as.vector(target)) %>% as_tibble()
+```
+
+## Construction of Multi-layer Signaling Networks
+
+```{r eval=FALSE}
+netList <- RunMLnet(data, BarCluTable, RecClu, LigClu, 
+                    abundant.cutoff, abs_logFC,
+                    Raw.data, min.cells, min.features,
+                    pval, logfc, min_pct,
+                    LigRec.DB, RecTF.DB, TFTG.DB)
+saveRDS(netList,"./example/netList.rds")
+```
+
+## Save and Visualization of Multi-layer Signaling Networks
+
+```{r eval=FALSE}
+# Save but do not draw
+DrawMLnet(netList,LigClu,RecClu,workdir,plotMLnet = F)
+
+# Save and draw
+PyHome <- "D:/Miniconda3/envs/R36/python.exe" #for Window
+DrawMLnet(netList,LigClu,RecClu,workdir,PyHome,plotMLnet = T)
+```
